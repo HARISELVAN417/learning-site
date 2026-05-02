@@ -1,0 +1,38 @@
+{
+  "title": "LearnStack – Smart Learning Platform for Students",
+  "description": "LearnStack is an interactive learning platform designed for students across Bharat. Practice quizzes, master programming, prepare for interviews, and boost your skills with real-world projects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [],
+  "keywords": [
+    "learning platform",
+    "online education India",
+    "programming tutorials",
+    "quiz website",
+    "interview preparation",
+    "student learning app",
+    "React learning",
+    "Java quiz",
+    "Python quiz",
+    "nursing exam preparation"
+  ],
+  "author": "Hariselvan S",
+  "language": "en",
+  "theme_color": "#4f46e5",
+  "background_color": "#ffffff",
+  "start_url": "/",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
+

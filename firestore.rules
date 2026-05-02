@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isAdmin() { 
+      return isSignedIn() && (
+        request.auth.token.email == 'hariselvans96@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // --- User Profiles ---
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['name', 'email', 'role']) &&
+               data.role in ['admin', 'student'];
+      }
+      allow list: if isAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == userId || request.auth.token.email == 'hariselvans96@gmail.com' || isAdmin());
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+    }
+
+    // --- Courses ---
+    match /courses/{courseId} {
+      function isValidCourse(data) {
+        return data.keys().hasAll(['title', 'description', 'instructorId', 'createdAt']) &&
+               (data.instructorId == request.auth.uid || request.auth.token.email == 'hariselvans96@gmail.com') &&
+               data.createdAt == request.time;
+      }
+      allow list, get: if true; 
+      allow create: if isAdmin() && isValidCourse(incoming());
+      allow update: if isAdmin() && isValidCourse(incoming());
+      allow delete: if isAdmin();
+
+      // Lessons
+      match /lessons/{lessonId} {
+        allow list, get: if true;
+        allow create, update, delete: if isAdmin();
+      }
+
+      // Activities
+      match /activities/{activityId} {
+        function isValidActivity(data) {
+          return data.keys().hasAll(['courseId', 'title', 'type']) &&
+                 data.courseId == courseId &&
+                 data.type in ['quiz', 'qa', 'coding', 'foundation'];
+        }
+        allow list, get: if true;
+        allow create, update: if isAdmin() && isValidActivity(incoming());
+        allow delete: if isAdmin();
+      }
+    }
+
+    // --- Submissions ---
+    match /submissions/{submissionId} {
+      function isValidSubmission(data) {
+        return data.keys().hasAll(['userId', 'activityId', 'submittedAt', 'status']) &&
+               data.userId == request.auth.uid &&
+               data.submittedAt == request.time &&
+               data.status in ['pending', 'graded'];
+      }
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow get: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && isValidSubmission(incoming());
+      allow update: if isAdmin(); // Only admin can grade
+      allow delete: if isAdmin();
+    }
+
+    // --- Feedback ---
+    match /feedback/{feedbackId} {
+      function isValidFeedback(data) {
+        return data.keys().hasAll(['userId', 'message', 'submittedAt']) &&
+               data.userId == request.auth.uid &&
+               data.submittedAt == request.time;
+      }
+      allow list, get: if isAdmin();
+      allow create: if isSignedIn() && isValidFeedback(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- Settings ---
+    match /settings/{settingId} {
+      allow get: if true;
+      allow write: if isAdmin();
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && request.resource.data.status == 'pending';
+      allow update, delete: if isAdmin();
+    }
+  }
+}
