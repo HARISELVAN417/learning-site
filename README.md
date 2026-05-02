@@ -1,76 +1,141 @@
-# learn-stack
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 🎓 AI-Powered Student Learning System
 
-# Run and deploy your AI Studio app
+## 🚀 Overview
 
-This contains everything you need to run your app locally.
+This project is an **AI-powered student learning platform** designed to help students across Bharat learn, practice, and grow effectively.
 
-View your app in AI Studio: https://ai.studio/apps/6f4b9dca-7d74-4cbf-90f0-b5ed267cfed8
+The platform focuses on:
 
-## Run Locally
+* 📚 Smart learning
+* 🧠 AI-generated important questions
+* 🎯 Course-based learning system
+* 📝 Student enrollment for department-specific courses
 
-**Prerequisites:** Node.js
+This project is built as part of my learning journey in **Prompt Engineering and AI-based development**.
 
-1. Install dependencies:
-   `npm install`
-2. Copy `.env` to `.env.local` and fill in your API keys:
-   ```bash
-   cp .env .env.local
-   ```
-3. Set your API keys in `.env.local`:
-   - `GEMINI_API_KEY`: Get from [Google AI Studio](https://aistudio.google.com/)
-   - Firebase keys: Get from your Firebase project settings
-4. Run the app:
-   `npm run dev`
+---
 
-## Deploy to Vercel
+## ✨ Features
 
-1. **Push to GitHub** (make sure `.env.local` is in `.gitignore`)
-2. **Connect to Vercel**:
-   - Go to [vercel.com](https://vercel.com)
-   - Import your GitHub repository
-   - Vercel will automatically detect the `vercel.json` configuration
+### 🤖 AI Question Generator
 
-3. **Set Environment Variables in Vercel**:
-   - Go to your project settings in Vercel
-   - Add these environment variables:
-     - `VITE_FIREBASE_API_KEY`
-     - `VITE_FIREBASE_AUTH_DOMAIN`
-     - `VITE_FIREBASE_PROJECT_ID`
-     - `VITE_FIREBASE_STORAGE_BUCKET`
-     - `VITE_FIREBASE_MESSAGING_SENDER_ID`
-     - `VITE_FIREBASE_APP_ID`
-     - `VITE_FIREBASE_DATABASE_ID`
-     - `GEMINI_API_KEY`
+* Generates **important questions automatically**
+* Helps students prepare for exams efficiently
+* Focuses on **high-priority concepts**
+* Uses prompt engineering techniques for better accuracy
 
-4. **Deploy**: Vercel will automatically build and deploy your app
+---
 
-## API Keys Setup (🔒 Security First!)
+### 📘 Course Enrollment System
 
-**⚠️ IMPORTANT:** Never commit real API keys to GitHub!
+* Students can **enroll in department-specific courses**
+* Organized learning structure
+* Tracks learning progress (future scope)
 
-### 1. Environment Variables
+---
 
-Copy the template and add your real API keys:
+### 🧑‍🎓 Student Learning Modules
+
+* Subject-wise content
+* Quiz-based practice
+* Interactive learning experience
+
+---
+
+### 🔐 Authentication System
+
+* Secure login/signup using Firebase Authentication
+* User-based access control
+
+---
+
+### ☁️ Database Integration
+
+* Uses Firestore Database
+* Stores:
+
+  * User data
+  * Course enrollments
+  * Learning progress
+
+---
+
+## 🛠️ Tech Stack
+
+* **Frontend:** HTML, CSS, JavaScript, React.js
+* **Backend:** Firebase
+* **Database:** Firestore
+* **Authentication:** Firebase Auth
+* **Deployment:** Vercel
+* **AI Integration:** Prompt Engineering (Google AI Studio)
+
+---
+
+## 🧠 What I Learned
+
+* Prompt Engineering techniques for AI question generation
+* Building real-world full-stack applications
+* Firebase authentication & database handling
+* Deploying projects using Vercel
+* Structuring scalable learning platforms
+
+---
+
+## 📌 Future Enhancements
+
+* 📊 Student progress dashboard
+* 🤖 Advanced AI tutor (chat-based learning)
+* 🏆 Gamification (badges, scores)
+* 📱 Mobile responsive improvements
+* 🌐 Multi-language support
+
+---
+
+## 📸 Screenshots
+
+(Add your project screenshots here)
+
+---
+
+## 🔗 Live Demo
+
+(Add your deployed website link here)
+
+---
+
+## 📂 Installation & Setup
 
 ```bash
-cp .env .env.local
+# Clone the repository
+git clone https://github.com/HARISELVAN417/learning-site.git
+
+# Navigate into the project
+cd your-repo-name
+
+# Install dependencies (if using React)
+npm install
+
+# Run the project
+npm start
 ```
 
-Then edit `.env.local` with your actual keys:
-- **Gemini API Key**: Get from [Google AI Studio](https://aistudio.google.com/)
-- **Firebase Keys**: Get from your Firebase project settings
+---
 
-### 2. Firebase Configuration
+## 🤝 Contribution
 
-Your Firebase config is now loaded from environment variables. The `firebase-applet-config.json` file is excluded from Git and should never be committed.
+Feel free to contribute to this project by submitting issues or pull requests.
 
-### 3. Security Check
+---
 
-Before pushing to GitHub, verify:
-- ✅ `.env.local` is in `.gitignore`
-- ✅ `firebase-applet-config.json` is in `.gitignore`
-- ✅ Only `.env` (with placeholders) is committed
-- ✅ `.env.local` contains real API keys (never committed)
+## 📬 Contact
+
+* LinkedIn: https://www.linkedin.com/in/hariselvans/
+* GitHub: https://github.com/HARISELVAN417
+
+---
+
+## ⭐ Support
+
+If you like this project, give it a ⭐ on GitHub!
+
+---
