@@ -1,9 +1,16 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp, orderBy, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Users, Search, ChevronRight, CheckCircle, Clock, Star, MessageSquare, Trash2, XCircle, Shield, User as UserIcon, Edit3, RefreshCw, UserPlus, Save, X } from 'lucide-react';
+import { Users, Search, ChevronRight, CheckCircle, Clock, Star, MessageSquare, Trash2, XCircle, Shield, User as UserIcon, Edit3, RefreshCw, UserPlus, Save, X, Award, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
+
+interface Certificate {
+  id: string;
+  title?: string;
+  url: string;
+  uploadedAt?: any;
+}
 
 interface Student {
   id: string;
@@ -18,6 +25,7 @@ interface Student {
   rollNumber?: string;
   department?: string;
   education?: string;
+  certificates?: Certificate[];
   mentor?: {
     name: string;
     email: string;
@@ -69,6 +77,8 @@ export default function StudentManagement() {
   const [assigningTo, setAssigningTo] = useState<Student | null>(null);
   const [mentorForm, setMentorForm] = useState({ name: '', email: '', phone: '', avatar: '' });
   const [savingMentor, setSavingMentor] = useState(false);
+  const [certificateForm, setCertificateForm] = useState({ title: '', url: '' });
+  const [savingCertificate, setSavingCertificate] = useState(false);
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -253,6 +263,60 @@ export default function StudentManagement() {
       handleFirestoreError(error, OperationType.UPDATE, path);
     } finally {
       blocking && setBlocking(false);
+    }
+  };
+
+  const handleAddCertificate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent) return;
+    if (!certificateForm.url.trim()) {
+      alert('Please provide a certificate image URL.');
+      return;
+    }
+
+    setSavingCertificate(true);
+    try {
+      const newCertificate = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: certificateForm.title.trim() || 'Certificate Image',
+        url: certificateForm.url.trim(),
+        uploadedAt: new Date()
+      };
+
+      const updatedCertificates = [
+        ...(selectedStudent.certificates || []),
+        newCertificate
+      ];
+
+      await updateDoc(doc(db, 'users', selectedStudent.id), {
+        certificates: updatedCertificates
+      });
+
+      const updatedStudent = { ...selectedStudent, certificates: updatedCertificates };
+      setSelectedStudent(updatedStudent);
+      setStudents(prev => prev.map(s => s.id === selectedStudent.id ? updatedStudent : s));
+      setCertificateForm({ title: '', url: '' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${selectedStudent.id}`);
+    } finally {
+      setSavingCertificate(false);
+    }
+  };
+
+  const handleRemoveCertificate = async (certificateId: string) => {
+    if (!selectedStudent) return;
+    const updatedCertificates = (selectedStudent.certificates || []).filter(cert => cert.id !== certificateId);
+
+    try {
+      await updateDoc(doc(db, 'users', selectedStudent.id), {
+        certificates: updatedCertificates
+      });
+
+      const updatedStudent = { ...selectedStudent, certificates: updatedCertificates };
+      setSelectedStudent(updatedStudent);
+      setStudents(prev => prev.map(s => s.id === selectedStudent.id ? updatedStudent : s));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${selectedStudent.id}`);
     }
   };
 
@@ -451,6 +515,79 @@ export default function StudentManagement() {
                          <p className="text-[10px] font-bold uppercase tracking-widest text-purple-400 mb-1">Operational ID</p>
                          <p className="text-purple-700 font-mono text-xs truncate">{selectedStudent.id}</p>
                       </div>
+                   </div>
+
+                   <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                     <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 italic">
+                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Certificate Count</p>
+                       <p className="text-slate-700 font-semibold">{selectedStudent.certificates?.length || 0}</p>
+                     </div>
+                     <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 italic">
+                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Latest Certificate</p>
+                       <p className="text-slate-700 font-medium">{selectedStudent.certificates?.[0]?.title || 'None assigned'}</p>
+                     </div>
+                   </div>
+
+                   <div className="mt-8 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/30 p-8 space-y-6">
+                      <div className="flex items-center gap-3 text-slate-900">
+                         <Award className="w-5 h-5 text-purple-500" />
+                         <div>
+                           <h3 className="text-lg font-bold">Certificates</h3>
+                           <p className="text-sm text-slate-500">Upload or remove certificate image links for this student.</p>
+                         </div>
+                      </div>
+
+                      <form onSubmit={handleAddCertificate} className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-4">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                           <input
+                             type="text"
+                             value={certificateForm.title}
+                             onChange={e => setCertificateForm(prev => ({ ...prev, title: e.target.value }))}
+                             placeholder="Certificate title"
+                             className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium outline-none focus:ring-4 focus:ring-purple-100"
+                           />
+                           <input
+                             type="url"
+                             value={certificateForm.url}
+                             onChange={e => setCertificateForm(prev => ({ ...prev, url: e.target.value }))}
+                             placeholder="Certificate image URL"
+                             className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-medium outline-none focus:ring-4 focus:ring-purple-100"
+                             required
+                           />
+                         </div>
+                         <button
+                           type="submit"
+                           disabled={savingCertificate}
+                           className="w-full xl:w-auto bg-purple-600 text-white rounded-2xl px-6 py-4 font-bold text-sm uppercase tracking-widest hover:bg-purple-700 transition disabled:opacity-50"
+                         >
+                           {savingCertificate ? 'Saving...' : 'Add Certificate'}
+                         </button>
+                      </form>
+
+                      {selectedStudent.certificates?.length ? (
+                        <div className="grid grid-cols-1 gap-4">
+                          {selectedStudent.certificates.map(cert => (
+                            <div key={cert.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-bold text-slate-900 truncate">{cert.title}</p>
+                                <p className="text-xs uppercase tracking-widest text-slate-400 mt-1">{new Date(cert.uploadedAt?.toDate?.() ?? cert.uploadedAt ?? new Date()).toLocaleDateString()}</p>
+                                <a href={cert.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-purple-600 font-semibold text-sm mt-2">
+                                  <Download className="w-4 h-4" /> View / Download
+                                </a>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveCertificate(cert.id)}
+                                className="text-red-600 hover:text-red-800 text-sm font-bold uppercase tracking-widest"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500">No certificates are assigned yet for this student.</p>
+                      )}
                    </div>
 
                    <div className="mt-8 pt-8 border-t border-slate-100 flex flex-wrap gap-4 items-center justify-between">

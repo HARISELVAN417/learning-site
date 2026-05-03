@@ -20,6 +20,14 @@ interface UserProfile {
   phone?: string;
   linkedIn?: string;
   canEditProfile?: boolean;
+  certificates?: Certificate[];
+}
+
+interface Certificate {
+  id: string;
+  title?: string;
+  url: string;
+  uploadedAt?: any;
 }
 
 interface Mentor {
@@ -116,6 +124,7 @@ export default function Profile({ user }: ProfileProps) {
           phone: data.phone || '',
           linkedIn: data.linkedIn || '',
           canEditProfile: data.canEditProfile ?? true,
+          certificates: data.certificates || []
         };
 
         setProfile(profileData);
@@ -134,7 +143,8 @@ export default function Profile({ user }: ProfileProps) {
           email: user.email || '',
           role: fallbackRole,
           avatar: '',
-          canEditProfile: true
+          canEditProfile: true,
+          certificates: []
         };
 
         setProfile(fallbackProfile);
@@ -160,6 +170,15 @@ export default function Profile({ user }: ProfileProps) {
       setLoading(false);
     }
   };
+
+  const formatUploadedAt = (uploadedAt?: any) => {
+    if (!uploadedAt) return 'Unknown date';
+    if (uploadedAt?.toDate) return uploadedAt.toDate().toLocaleDateString();
+    if (uploadedAt instanceof Date) return uploadedAt.toLocaleDateString();
+    return String(uploadedAt);
+  };
+
+  const certificateCount = profile?.certificates?.length ?? 0;
 
   const handleSave = async () => {
     if (!user || !profile) return;
@@ -253,7 +272,7 @@ export default function Profile({ user }: ProfileProps) {
             </div>
             
             <div className="pb-4 space-y-1">
-              <h1 className="text-2xl md:text-3xl font-bold text-white drop-shadow-sm">
+              <h1 className="text-5xl md:text-5xl font-bold text-white drop-shadow-sm">
                 {profile.name}
               </h1>
               <div className="flex items-center gap-2 text-white/80 font-medium">
@@ -421,6 +440,48 @@ export default function Profile({ user }: ProfileProps) {
                 <p className="text-slate-600 bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 italic leading-relaxed">
                   {profile.education || 'Academic data not yet synchronized.'}
                 </p>
+              )}
+            </div>
+
+            <div className="space-y-8 p-6 bg-slate-50 border border-slate-100 rounded-[2rem]">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Certificates</p>
+                  <p className="text-xl font-bold text-slate-900">{certificateCount}</p>
+                </div>
+                <span className="inline-flex items-center rounded-full bg-purple-100 text-purple-700 px-3 py-1 text-[10px] font-bold uppercase tracking-widest">
+                  {certificateCount === 1 ? '1 certificate' : `${certificateCount} certificates`}
+                </span>
+              </div>
+
+              {certificateCount === 0 ? (
+                <p className="text-slate-500 text-sm">
+                  No certificate images have been attached to this profile yet. Once an admin uploads a certificate link, it will appear here.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {profile.certificates?.map(cert => (
+                    <div key={cert.id} className="rounded-[1.75rem] border border-slate-200 overflow-hidden shadow-sm bg-white">
+                      <div className="w-full h-40 overflow-hidden bg-slate-100">
+                        <img src={cert.url} alt={cert.title || 'Certificate image'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-widest text-slate-400">{cert.title || 'Certificate Image'}</p>
+                          <p className="text-sm font-medium text-slate-700 mt-1">Uploaded: {formatUploadedAt(cert.uploadedAt)}</p>
+                        </div>
+                        <a
+                          href={cert.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-2 w-full rounded-2xl bg-purple-600 text-white px-4 py-3 text-sm font-semibold transition hover:bg-purple-700"
+                        >
+                          View / Download
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
