@@ -176,7 +176,7 @@ export default function Dashboard({ user }: { user: FirebaseUser }) {
               </div>
               <h3 className="text-xl font-bold text-slate-900 mb-2">No active enrollments</h3>
               <p className="text-slate-500 font-medium mb-8">Start your first learning module to begin your professional journey.</p>
-              <Link to="/dashboard" className="inline-flex items-center gap-2 bg-purple-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-purple-100 hover:bg-purple-700 transition-all active:scale-95">
+              <Link to="/" className="inline-flex items-center gap-2 bg-purple-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-purple-100 hover:bg-purple-700 transition-all active:scale-95">
                 Explore Directory <ArrowRight className="w-4 h-4" />
               </Link>
             </div>

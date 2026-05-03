@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, doc, where, deleteDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, doc, where, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Megaphone, Calendar, User, Image as ImageIcon, Send, Plus, X, Bell, Trash2 } from 'lucide-react';
+import { Megaphone, Calendar, User, Image as ImageIcon, Send, Plus, X, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Announcement {
@@ -13,6 +13,13 @@ interface Announcement {
   authorName: string;
   authorId: string;
   createdAt: any;
+  type?: 'announcement' | 'event';
+  venue?: string;
+  eventDate?: any;
+  maxAttendees?: number;
+  bookingOpen?: any;
+  bookingClose?: any;
+  eventPassword?: string;
 }
 
 interface AnnouncementsProps {
@@ -21,9 +28,24 @@ interface AnnouncementsProps {
 
 export default function Announcements({ role }: AnnouncementsProps) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [registrationsByEvent, setRegistrationsByEvent] = useState<Record<string, any[]>>({});
+  const [loadingRegistrationIds, setLoadingRegistrationIds] = useState<Record<string, boolean>>({});
+  const [eventPasswords, setEventPasswords] = useState<Record<string, string>>({});
+  const [updatingPasswordIds, setUpdatingPasswordIds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '', imageUrl: '', expiresAt: '' });
+  const [newAnnouncement, setNewAnnouncement] = useState({
+    title: '',
+    content: '',
+    imageUrl: '',
+    expiresAt: '',
+    type: 'announcement',
+    venue: '',
+    eventDate: '',
+    maxAttendees: '',
+    bookingOpen: '',
+    bookingClose: ''
+  });
   const [submitting, setSubmitting] = useState(false);
 
   const isAdmin = role === 'admin';
@@ -31,6 +53,62 @@ export default function Announcements({ role }: AnnouncementsProps) {
   useEffect(() => {
     fetchAnnouncements();
   }, [role]);
+
+  const parseDateValue = (value: any) => {
+    if (!value) return null;
+    return value.toDate ? value.toDate() : new Date(value);
+  };
+
+  const formatDate = (value: any) => {
+    const date = parseDateValue(value);
+    return date ? date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not set';
+  };
+
+  const getEventStatus = (ann: Announcement) => {
+    if (ann.type !== 'event') return null;
+    const now = new Date();
+    const open = parseDateValue(ann.bookingOpen);
+    const close = parseDateValue(ann.bookingClose);
+    if (open && now < open) return `Booking opens ${open.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`;
+    if (close && now > close) return 'Registration closed';
+    return 'Registration open';
+  };
+
+  const isWithinBookingWindow = (ann: Announcement) => {
+    if (ann.type !== 'event') return false;
+    const now = new Date();
+    const open = parseDateValue(ann.bookingOpen);
+    const close = parseDateValue(ann.bookingClose);
+    if (open && now < open) return false;
+    if (close && now > close) return false;
+    return true;
+  };
+
+  const getRegisteredStudents = (eventId: string) => registrationsByEvent[eventId] || [];
+
+  const getStudentRegistration = (eventId: string) => {
+    const userId = auth.currentUser?.uid;
+    return getRegisteredStudents(eventId).find(reg => reg.studentId === userId);
+  };
+
+  const isEventFull = (ann: Announcement) => {
+    if (!ann.maxAttendees) return false;
+    return getRegisteredStudents(ann.id).length >= ann.maxAttendees;
+  };
+
+  const fetchEventRegistrations = async (eventIds: string[]) => {
+    const results: Record<string, any[]> = {};
+    await Promise.all(eventIds.map(async (eventId) => {
+      try {
+        const regsSnapshot = await getDocs(collection(db, 'announcements', eventId, 'registrations'));
+        results[eventId] = regsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (error) {
+        console.warn(`Unable to load registrations for event ${eventId}:`, error);
+        results[eventId] = [];
+      }
+    }));
+    setRegistrationsByEvent(results);
+  };
 
   const fetchAnnouncements = async () => {
     setLoading(true);
@@ -40,17 +118,29 @@ export default function Announcements({ role }: AnnouncementsProps) {
       const snapshot = await getDocs(q);
       const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Announcement));
 
-      if (isAdmin) {
-        setAnnouncements(all);
+      const visibleAnnouncements = isAdmin ? all : all.filter(ann => {
+        if (!ann.expiresAt) return true;
+        const expiry = parseDateValue(ann.expiresAt);
+        return expiry ? expiry > new Date() : true;
+      });
+
+      setAnnouncements(visibleAnnouncements);
+
+      const eventIds = visibleAnnouncements.filter(ann => ann.type === 'event').map(ann => ann.id);
+      if (eventIds.length) {
+        await fetchEventRegistrations(eventIds);
       } else {
-        const now = new Date();
-        const active = all.filter(ann => {
-          if (!ann.expiresAt) return true;
-          const expiry = ann.expiresAt.toDate ? ann.expiresAt.toDate() : new Date(ann.expiresAt);
-          return expiry > now;
-        });
-        setAnnouncements(active);
+        setRegistrationsByEvent({});
       }
+
+      // Initialize event passwords
+      const passwords: Record<string, string> = {};
+      visibleAnnouncements.forEach(ann => {
+        if (ann.type === 'event' && ann.eventPassword) {
+          passwords[ann.id] = ann.eventPassword;
+        }
+      });
+      setEventPasswords(passwords);
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
     } finally {
@@ -64,6 +154,11 @@ export default function Announcements({ role }: AnnouncementsProps) {
     try {
       await deleteDoc(doc(db, 'announcements', id));
       setAnnouncements(prev => prev.filter(ann => ann.id !== id));
+      setRegistrationsByEvent(prev => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `announcements/${id}`);
     }
@@ -78,6 +173,13 @@ export default function Announcements({ role }: AnnouncementsProps) {
         title: newAnnouncement.title,
         content: newAnnouncement.content,
         imageUrl: newAnnouncement.imageUrl,
+        type: newAnnouncement.type,
+        venue: newAnnouncement.type === 'event' ? newAnnouncement.venue : null,
+        eventDate: newAnnouncement.type === 'event' && newAnnouncement.eventDate ? new Date(newAnnouncement.eventDate) : null,
+        maxAttendees: newAnnouncement.type === 'event' && newAnnouncement.maxAttendees ? Number(newAnnouncement.maxAttendees) : null,
+        bookingOpen: newAnnouncement.type === 'event' && newAnnouncement.bookingOpen ? new Date(newAnnouncement.bookingOpen) : null,
+        bookingClose: newAnnouncement.type === 'event' && newAnnouncement.bookingClose ? new Date(newAnnouncement.bookingClose) : null,
+        eventPassword: null, // Initialize as null, admin can set later
         expiresAt: newAnnouncement.expiresAt ? new Date(newAnnouncement.expiresAt) : null,
         authorId: auth.currentUser.uid,
         authorName: auth.currentUser.displayName || 'Administrator',
@@ -91,23 +193,100 @@ export default function Announcements({ role }: AnnouncementsProps) {
       const notificationPromises = studentsSnapshot.docs.map(studentDoc => 
         addDoc(collection(db, 'notifications'), {
           userId: studentDoc.id,
-          title: 'New Announcement',
+          title: newAnnouncement.type === 'event' ? 'New Event Posted' : 'New Announcement',
           message: newAnnouncement.title,
-          type: 'announcement',
+          type: newAnnouncement.type === 'event' ? 'event' : 'announcement',
           read: false,
           relatedId: docRef.id,
           createdAt: serverTimestamp()
         })
       );
       await Promise.all(notificationPromises);
-      
-      setAnnouncements(prev => [{ id: docRef.id, ...announcementData, createdAt: { toDate: () => new Date() }, expiresAt: announcementData.expiresAt } as any, ...prev]);
+      await fetchAnnouncements();
       setShowAddModal(false);
-      setNewAnnouncement({ title: '', content: '', imageUrl: '', expiresAt: '' });
+      setNewAnnouncement({ title: '', content: '', imageUrl: '', expiresAt: '', type: 'announcement', venue: '', eventDate: '', maxAttendees: '', bookingOpen: '', bookingClose: '' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'announcements');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRegister = async (eventAnn: Announcement) => {
+    if (!auth.currentUser) return;
+    if (eventAnn.type !== 'event') return;
+    const now = new Date();
+    const bookingOpen = parseDateValue(eventAnn.bookingOpen);
+    const bookingClose = parseDateValue(eventAnn.bookingClose);
+    const registrations = getRegisteredStudents(eventAnn.id);
+    const alreadyRegistered = registrations.some(reg => reg.studentId === auth.currentUser?.uid);
+
+    if (alreadyRegistered) {
+      alert('You are already registered for this event.');
+      return;
+    }
+    if (bookingOpen && now < bookingOpen) {
+      alert('Registration has not opened yet.');
+      return;
+    }
+    if (bookingClose && now > bookingClose) {
+      alert('Registration is closed.');
+      return;
+    }
+    if (eventAnn.maxAttendees && registrations.length >= eventAnn.maxAttendees) {
+      alert('This event is fully booked.');
+      return;
+    }
+
+    setLoadingRegistrationIds(prev => ({ ...prev, [eventAnn.id]: true }));
+    try {
+      const registrationData = {
+        studentId: auth.currentUser.uid,
+        studentName: auth.currentUser.displayName || 'Student',
+        studentEmail: auth.currentUser.email || '',
+        registeredAt: serverTimestamp(),
+        passwordSent: false
+      };
+      const registrationRef = await addDoc(collection(db, 'announcements', eventAnn.id, 'registrations'), registrationData);
+      setRegistrationsByEvent(prev => ({
+        ...prev,
+        [eventAnn.id]: [...(prev[eventAnn.id] || []), { id: registrationRef.id, ...registrationData, registeredAt: new Date() }]
+      }));
+      alert('Registration successful. The administrator will send your access password manually.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `announcements/${eventAnn.id}/registrations`);
+    } finally {
+      setLoadingRegistrationIds(prev => ({ ...prev, [eventAnn.id]: false }));
+    }
+  };
+
+  const handlePasswordSentToggle = async (eventId: string, regId: string, current: boolean) => {
+    setLoadingRegistrationIds(prev => ({ ...prev, [regId]: true }));
+    try {
+      await updateDoc(doc(db, 'announcements', eventId, 'registrations', regId), { passwordSent: !current });
+      setRegistrationsByEvent(prev => ({
+        ...prev,
+        [eventId]: prev[eventId].map(reg => reg.id === regId ? { ...reg, passwordSent: !current } : reg)
+      }));
+    } catch (error) {
+      console.warn('Unable to update password sent status:', error);
+    } finally {
+      setLoadingRegistrationIds(prev => ({ ...prev, [regId]: false }));
+    }
+  };
+
+  const handleUpdateEventPassword = async (eventId: string, password: string) => {
+    setUpdatingPasswordIds(prev => ({ ...prev, [eventId]: true }));
+    try {
+      await updateDoc(doc(db, 'announcements', eventId), { eventPassword: password });
+      setAnnouncements(prev => prev.map(ann =>
+        ann.id === eventId ? { ...ann, eventPassword: password } : ann
+      ));
+      setEventPasswords(prev => ({ ...prev, [eventId]: password }));
+    } catch (error) {
+      console.warn('Unable to update event password:', error);
+    } finally {
+      setUpdatingPasswordIds(prev => ({ ...prev, [eventId]: false }));
     }
   };
 
@@ -190,18 +369,141 @@ export default function Announcements({ role }: AnnouncementsProps) {
                 </div>
                 
                   <div className="space-y-4">
-                    <div className="flex items-center gap-2 px-2">
-                       <span className={`w-2 h-2 rounded-full ${ann.expiresAt ? ( (ann.expiresAt.toDate ? ann.expiresAt.toDate() : new Date(ann.expiresAt)) > new Date() ? 'bg-emerald-500' : 'bg-red-500' ) : 'bg-purple-500'}`}></span>
-                       <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                          {ann.expiresAt ? ( (ann.expiresAt.toDate ? ann.expiresAt.toDate() : new Date(ann.expiresAt)) > new Date() ? 'Active' : 'Expired' ) : 'Permanent'}
-                       </span>
+                    <div className="flex flex-wrap gap-2 px-2">
+                      <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        {ann.type === 'event' ? 'Event' : 'Announcement'}
+                      </span>
+                      <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${ann.expiresAt ? (((ann.expiresAt.toDate ? ann.expiresAt.toDate() : new Date(ann.expiresAt)) > new Date()) ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700') : 'bg-purple-100 text-purple-700'}`}>
+                        {ann.expiresAt ? (((ann.expiresAt.toDate ? ann.expiresAt.toDate() : new Date(ann.expiresAt)) > new Date()) ? 'Active' : 'Expired') : 'Permanent'}
+                      </span>
                     </div>
-                    <h3 className="text-xl font-bold text-slate-900 leading-tight group-hover:text-purple-600 transition-colors">{ann.title}</h3>
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-bold text-slate-900 leading-tight group-hover:text-purple-600 transition-colors">{ann.title}</h3>
+                      {ann.type === 'event' && (
+                        <div className="grid gap-3 text-sm text-slate-600 rounded-3xl bg-slate-50 p-4 border border-slate-100">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold">Event Date</span>
+                            <span>{formatDate(ann.eventDate)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold">Venue</span>
+                            <span>{ann.venue || 'Not set'}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold">Booking window</span>
+                            <span>{ann.bookingOpen ? formatDate(ann.bookingOpen) : 'Open now'} → {ann.bookingClose ? formatDate(ann.bookingClose) : 'No deadline'}</span>
+                          </div>
+                          {ann.maxAttendees ? (
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold">Capacity</span>
+                              <span>{getRegisteredStudents(ann.id).length}/{ann.maxAttendees}</span>
+                            </div>
+                          ) : null}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold">Status</span>
+                            <span>{getEventStatus(ann)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                
+
                 <p className="text-slate-500 font-medium leading-relaxed line-clamp-4">
                   {ann.content}
                 </p>
+
+                {ann.type === 'event' && (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold text-slate-700">Event registration</span>
+                      <span className="text-xs uppercase tracking-[0.25em] text-slate-400">{getRegisteredStudents(ann.id).length} registered</span>
+                    </div>
+                    {!isAdmin && (
+                      <div className="space-y-3">
+                        <button
+                          type="button"
+                          onClick={() => handleRegister(ann)}
+                          disabled={!isWithinBookingWindow(ann) || !!getStudentRegistration(ann.id) || isEventFull(ann) || loadingRegistrationIds[ann.id]}
+                          className="w-full bg-purple-600 text-white py-4 rounded-2xl font-bold hover:bg-purple-700 transition-all disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+                        >
+                          {getStudentRegistration(ann.id)
+                            ? 'Already registered'
+                            : isEventFull(ann)
+                              ? 'Event fully booked'
+                              : !isWithinBookingWindow(ann)
+                                ? getEventStatus(ann)
+                                : loadingRegistrationIds[ann.id]
+                                  ? 'Registering...'
+                                  : 'Register for event'}
+                        </button>
+
+                        {getStudentRegistration(ann.id) && ann.eventPassword && (
+                          <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm">
+                            <p className="text-emerald-700 font-bold mb-2">Event Access Password</p>
+                            <p className="text-emerald-900 font-mono bg-white px-3 py-2 rounded-lg border border-emerald-200 text-center text-lg font-bold tracking-wider">
+                              {ann.eventPassword}
+                            </p>
+                            <p className="text-xs text-emerald-600 mt-2 italic">Use this password to access the event</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {isAdmin && (
+                      <div className="space-y-3 rounded-3xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
+                        <div className="space-y-3">
+                          <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Event Access Password</label>
+                          <div className="flex gap-3">
+                            <input
+                              type="text"
+                              value={eventPasswords[ann.id] || ''}
+                              onChange={(e) => setEventPasswords(prev => ({ ...prev, [ann.id]: e.target.value }))}
+                              placeholder="Enter password for registered students"
+                              className="flex-1 bg-white border border-slate-200 p-3 rounded-2xl outline-none focus:ring-4 focus:ring-purple-100 focus:border-purple-200 transition-all"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateEventPassword(ann.id, eventPasswords[ann.id] || '')}
+                              disabled={updatingPasswordIds[ann.id]}
+                              className="bg-purple-600 text-white px-4 py-3 rounded-2xl font-bold hover:bg-purple-700 transition-all disabled:opacity-50"
+                            >
+                              {updatingPasswordIds[ann.id] ? 'Updating...' : 'Update'}
+                            </button>
+                          </div>
+                          {ann.eventPassword && (
+                            <p className="text-xs text-slate-500 italic">Current password: <span className="font-mono bg-slate-100 px-2 py-1 rounded">{ann.eventPassword}</span></p>
+                          )}
+                        </div>
+
+                        <p className="text-slate-500">Students register here and the admin can manually send the access password afterward.</p>
+                        {getRegisteredStudents(ann.id).length === 0 ? (
+                          <p className="text-slate-500 italic">No registrations yet.</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {getRegisteredStudents(ann.id).map(reg => (
+                              <div key={reg.id} className="rounded-3xl bg-white p-4 border border-slate-100">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="font-bold text-slate-900">{reg.studentName}</p>
+                                    <p className="text-xs text-slate-500">{reg.studentEmail}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePasswordSentToggle(ann.id, reg.id, !!reg.passwordSent)}
+                                    disabled={loadingRegistrationIds[reg.id]}
+                                    className={`rounded-full px-3 py-2 text-xs font-bold uppercase transition ${reg.passwordSent ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                                  >
+                                    {reg.passwordSent ? 'Password sent' : 'Mark password sent'}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}
@@ -258,6 +560,92 @@ export default function Announcements({ role }: AnnouncementsProps) {
                         placeholder="https://images.unsplash.com/..."
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Post Type</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setNewAnnouncement(p => ({ ...p, type: 'announcement' }))}
+                        className={`rounded-2xl border p-4 text-sm font-bold transition ${newAnnouncement.type === 'announcement' ? 'border-purple-600 bg-purple-50 text-purple-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}
+                      >
+                        Announcement
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewAnnouncement(p => ({ ...p, type: 'event' }))}
+                        className={`rounded-2xl border p-4 text-sm font-bold transition ${newAnnouncement.type === 'event' ? 'border-purple-600 bg-purple-50 text-purple-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}
+                      >
+                        Event
+                      </button>
+                    </div>
+
+                    {newAnnouncement.type === 'event' && (
+                      <div className="space-y-4 rounded-[2rem] border border-slate-100 bg-slate-50 p-5">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Event Venue</label>
+                          <input
+                            type="text"
+                            value={newAnnouncement.venue}
+                            onChange={e => setNewAnnouncement(p => ({ ...p, venue: e.target.value }))}
+                            className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-4 focus:ring-purple-100 focus:border-purple-200 transition-all"
+                            placeholder="e.g. Hall A, Library Auditorium"
+                            required={newAnnouncement.type === 'event'}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Event Date / Time</label>
+                            <input
+                              type="datetime-local"
+                              value={newAnnouncement.eventDate}
+                              onChange={e => setNewAnnouncement(p => ({ ...p, eventDate: e.target.value }))}
+                              className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-4 focus:ring-purple-100 focus:border-purple-200 transition-all"
+                              required={newAnnouncement.type === 'event'}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Maximum Attendees</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={newAnnouncement.maxAttendees}
+                              onChange={e => setNewAnnouncement(p => ({ ...p, maxAttendees: e.target.value }))}
+                              className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-4 focus:ring-purple-100 focus:border-purple-200 transition-all"
+                              placeholder="e.g. 50"
+                              required={newAnnouncement.type === 'event'}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Booking Open</label>
+                            <input
+                              type="datetime-local"
+                              value={newAnnouncement.bookingOpen}
+                              onChange={e => setNewAnnouncement(p => ({ ...p, bookingOpen: e.target.value }))}
+                              className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-4 focus:ring-purple-100 focus:border-purple-200 transition-all"
+                              required={newAnnouncement.type === 'event'}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Booking Close</label>
+                            <input
+                              type="datetime-local"
+                              value={newAnnouncement.bookingClose}
+                              onChange={e => setNewAnnouncement(p => ({ ...p, bookingClose: e.target.value }))}
+                              className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-4 focus:ring-purple-100 focus:border-purple-200 transition-all"
+                              required={newAnnouncement.type === 'event'}
+                            />
+                          </div>
+                        </div>
+
+                        <p className="text-[10px] text-slate-500 italic">Registered students appear below and the admin may send passwords manually after registration.</p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
