@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ArrowLeft, Plus, Trash2, Save, Loader2, Calendar, Sparkles, Wand2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -35,6 +35,22 @@ export default function AddActivity() {
     { question_text: '', options: ['', ''], correct_answer: 0 }
   ]);
   const [qaPrompts, setQaPrompts] = useState<string[]>(['']);
+  const [isEventModule, setIsEventModule] = useState(false);
+
+  useEffect(() => {
+    async function fetchCourseMeta() {
+      if (!courseId) return;
+      try {
+        const courseDoc = await getDoc(doc(db, 'courses', courseId));
+        if (courseDoc.exists()) {
+          setIsEventModule(courseDoc.data()?.moduleType === 'event');
+        }
+      } catch (error) {
+        console.error('Course fetch error:', error);
+      }
+    }
+    fetchCourseMeta();
+  }, [courseId]);
 
   const generateWithAI = async () => {
     if (!aiPrompt.trim()) return;
@@ -121,7 +137,7 @@ export default function AddActivity() {
         max_score: activity.max_score,
         startTime: activity.startTime ? Timestamp.fromDate(new Date(activity.startTime)) : null,
         endTime: activity.endTime ? Timestamp.fromDate(new Date(activity.endTime)) : null,
-        password: activity.type === 'foundation' ? activity.password : null,
+        password: (isEventModule || activity.type === 'foundation') ? activity.password : null,
         createdAt: serverTimestamp()
       } as any;
 
@@ -196,6 +212,20 @@ export default function AddActivity() {
                 <option value="foundation">Foundation Exam</option>
               </select>
             </div>
+
+            {isEventModule && activity.type !== 'foundation' && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-orange-600">Event Access Key (Required)</label>
+                <input 
+                  type="text"
+                  value={activity.password}
+                  onChange={e => setActivity(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full bg-[#FFF5F5] border border-orange-500 p-3 text-sm font-mono placeholder:opacity-30"
+                  placeholder="REQUIRED KEY FOR EVENT PARTICIPANTS"
+                  required
+                />
+              </div>
+            )}
 
             {activity.type === 'foundation' && (
               <>

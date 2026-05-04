@@ -265,13 +265,13 @@ export default function QuizView({ user }: { user: FirebaseUser }) {
   );
   if (!activity) return <div>Invalid Session.</div>;
 
-  if (activity.type === 'foundation' && !isAuthorized) {
+  if (activity.password && !isAuthorized) {
     return (
       <div className="max-w-md mx-auto py-24 space-y-8">
         <div className="bg-white border border-[#141414] p-8 shadow-[8px_8px_0px_#141414] space-y-6">
           <div className="text-center space-y-2">
             <Lock className="w-12 h-12 mx-auto text-orange-500" />
-            <h2 className="text-2xl font-black uppercase italic italic tracking-tighter">Foundation Exam</h2>
+            <h2 className="text-2xl font-black uppercase italic italic tracking-tighter">Secure Activity</h2>
             <p className="text-[10px] font-mono uppercase opacity-50">Security validation required to proceed</p>
           </div>
           <div className="space-y-4">
@@ -296,7 +296,7 @@ export default function QuizView({ user }: { user: FirebaseUser }) {
               }}
               className="w-full bg-[#141414] text-white py-4 font-bold uppercase tracking-widest hover:invert transition-all"
             >
-              Unlock Exam
+              Unlock Activity
             </button>
           </div>
         </div>

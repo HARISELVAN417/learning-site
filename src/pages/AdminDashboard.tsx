@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Plus, Book, Users, Trash2, Edit, ArrowRight, Loader2, LayoutDashboard, FileText, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -10,13 +10,24 @@ interface Course {
   title: string;
   description: string;
   instructorId: string;
+  moduleType?: 'course' | 'event';
+  linkedAnnouncementId?: string | null;
+}
+
+interface EventAnnouncement {
+  id: string;
+  title: string;
 }
 
 export default function AdminDashboard() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showDeployOptions, setShowDeployOptions] = useState(false);
+  const [deployType, setDeployType] = useState<'course' | 'event'>('course');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newCourse, setNewCourse] = useState({ title: '', description: '' });
+  const [eventAnnouncements, setEventAnnouncements] = useState<EventAnnouncement[]>([]);
+  const [selectedEventAnnouncementId, setSelectedEventAnnouncementId] = useState('');
   const [creating, setCreating] = useState(false);
 
   const fetchAdminCourses = async () => {
@@ -37,6 +48,22 @@ export default function AdminDashboard() {
     fetchAdminCourses();
   }, [auth.currentUser?.uid]);
 
+  useEffect(() => {
+    if (showCreateModal && deployType === 'event') {
+      fetchEventAnnouncements();
+    }
+  }, [showCreateModal, deployType]);
+
+  const fetchEventAnnouncements = async () => {
+    try {
+      const q = query(collection(db, 'announcements'), where('type', '==', 'event'));
+      const snapshot = await getDocs(q);
+      setEventAnnouncements(snapshot.docs.map(doc => ({ id: doc.id, title: doc.data().title } as EventAnnouncement)));
+    } catch (error) {
+      console.error('Event announcement fetch error:', error);
+    }
+  };
+
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth.currentUser) return;
@@ -45,10 +72,21 @@ export default function AdminDashboard() {
       const docRef = await addDoc(collection(db, 'courses'), {
         ...newCourse,
         instructorId: auth.currentUser.uid,
+        moduleType: deployType,
+        linkedAnnouncementId: deployType === 'event' ? (selectedEventAnnouncementId || null) : null,
         createdAt: serverTimestamp()
       });
-      setCourses(prev => [...prev, { id: docRef.id, ...newCourse, instructorId: auth.currentUser!.uid }]);
+
+      if (deployType === 'event' && selectedEventAnnouncementId) {
+        await updateDoc(doc(db, 'announcements', selectedEventAnnouncementId), {
+          eventCourseId: docRef.id
+        });
+      }
+
+      setCourses(prev => [...prev, { id: docRef.id, ...newCourse, instructorId: auth.currentUser!.uid, moduleType: deployType, linkedAnnouncementId: selectedEventAnnouncementId || null }]);
       setShowCreateModal(false);
+      setShowDeployOptions(false);
+      setSelectedEventAnnouncementId('');
       setNewCourse({ title: '', description: '' });
     } catch (error) {
       console.error("Create error:", error);
@@ -85,12 +123,59 @@ export default function AdminDashboard() {
         </div>
 
         <button 
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => setShowDeployOptions(true)}
           className="bg-[#facc15] text-black px-8 py-5 rounded-2xl font-black uppercase tracking-[0.2em] text-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-3 relative z-10 active:scale-[0.98]"
         >
           <Plus className="w-6 h-6" /> Deploy Module
         </button>
       </section>
+
+      <AnimatePresence>
+        {showDeployOptions && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="bg-white p-10 max-w-xl w-full rounded-[2.5rem] shadow-2xl relative overflow-hidden ring-1 ring-black/5"
+            >
+              <div className="absolute top-0 left-0 right-0 h-2 bg-[#facc15]"></div>
+              <h2 className="text-4xl font-black uppercase tracking-tighter mb-8 text-[#1a1a1a]">Deploy Module</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeployType('course');
+                    setShowCreateModal(true);
+                    setShowDeployOptions(false);
+                  }}
+                  className="bg-[#7c3aed] text-white p-8 rounded-3xl font-black uppercase tracking-[0.2em] text-base hover:bg-[#5b21b6] transition-all"
+                >
+                  Course Module
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeployType('event');
+                    setShowCreateModal(true);
+                    setShowDeployOptions(false);
+                  }}
+                  className="bg-[#f43f5e] text-white p-8 rounded-3xl font-black uppercase tracking-[0.2em] text-base hover:bg-[#c026d3] transition-all"
+                >
+                  Event Module
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeployOptions(false)}
+                className="mt-8 w-full bg-slate-100 text-slate-700 py-4 rounded-3xl font-bold uppercase tracking-[0.2em] hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Course List */}
       <section>
@@ -116,7 +201,14 @@ export default function AdminDashboard() {
                       {idx + 1}
                     </div>
                     <div>
-                      <h3 className="text-3xl font-black uppercase italic tracking-tighter leading-tight mb-2">{course.title}</h3>
+                      <div className="flex items-center gap-3 mb-3">
+                        <h3 className="text-3xl font-black uppercase italic tracking-tighter leading-tight">{course.title}</h3>
+                        {course.moduleType === 'event' && (
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] bg-rose-100 text-rose-700 px-3 py-1 rounded-full">
+                            Event Module
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs font-bold leading-relaxed uppercase opacity-70 line-clamp-2 italic">{course.description}</p>
                     </div>
                   </div>
@@ -164,7 +256,7 @@ export default function AdminDashboard() {
               className="bg-white p-10 max-w-2xl w-full rounded-[2.5rem] shadow-2xl relative overflow-hidden ring-1 ring-black/5"
             >
               <div className="absolute top-0 left-0 right-0 h-2 bg-[#facc15]"></div>
-              <h2 className="text-5xl font-black uppercase italic tracking-tighter mb-10 text-[#1a1a1a]">Initialize Module</h2>
+              <h2 className="text-5xl font-black uppercase italic tracking-tighter mb-10 text-[#1a1a1a]">Initialize {deployType === 'event' ? 'Event Module' : 'Course Module'}</h2>
               
               <form onSubmit={handleCreateCourse} className="space-y-8">
                 <div className="space-y-3">
@@ -178,6 +270,25 @@ export default function AdminDashboard() {
                     required
                   />
                 </div>
+                {deployType === 'event' && (
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 px-1">Connect to Event</label>
+                    <select
+                      value={selectedEventAnnouncementId}
+                      onChange={e => setSelectedEventAnnouncementId(e.target.value)}
+                      className="w-full bg-[#f8fafc] border border-gray-200 p-5 rounded-2xl text-lg font-black uppercase italic focus:outline-none focus:ring-2 focus:ring-[#7639f5]/10 transition-all"
+                      required
+                    >
+                      <option value="">Select existing event announcement</option>
+                      {eventAnnouncements.map(option => (
+                        <option key={option.id} value={option.id}>{option.title}</option>
+                      ))}
+                    </select>
+                    {eventAnnouncements.length === 0 && (
+                      <p className="text-xs italic text-slate-500">No event announcements available. Create the event first in Announcements.</p>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 px-1">Technical Specs</label>
                   <textarea 

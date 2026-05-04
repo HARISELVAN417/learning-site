@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, doc, where, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, addDoc, setDoc, serverTimestamp, doc, where, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Megaphone, Calendar, User, Image as ImageIcon, Send, Plus, X, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Announcement {
@@ -20,6 +21,12 @@ interface Announcement {
   bookingOpen?: any;
   bookingClose?: any;
   eventPassword?: string;
+  eventCourseId?: string | null;
+}
+
+interface EventCourse {
+  id: string;
+  title: string;
 }
 
 interface AnnouncementsProps {
@@ -32,6 +39,7 @@ export default function Announcements({ role }: AnnouncementsProps) {
   const [loadingRegistrationIds, setLoadingRegistrationIds] = useState<Record<string, boolean>>({});
   const [eventPasswords, setEventPasswords] = useState<Record<string, string>>({});
   const [updatingPasswordIds, setUpdatingPasswordIds] = useState<Record<string, boolean>>({});
+  const [eventCourses, setEventCourses] = useState<EventCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newAnnouncement, setNewAnnouncement] = useState({
@@ -44,7 +52,8 @@ export default function Announcements({ role }: AnnouncementsProps) {
     eventDate: '',
     maxAttendees: '',
     bookingOpen: '',
-    bookingClose: ''
+    bookingClose: '',
+    eventCourseId: ''
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -52,7 +61,20 @@ export default function Announcements({ role }: AnnouncementsProps) {
 
   useEffect(() => {
     fetchAnnouncements();
+    if (isAdmin) {
+      fetchEventCourses();
+    }
   }, [role]);
+
+  const fetchEventCourses = async () => {
+    try {
+      const q = query(collection(db, 'courses'), where('moduleType', '==', 'event'));
+      const snapshot = await getDocs(q);
+      setEventCourses(snapshot.docs.map(doc => ({ id: doc.id, title: doc.data().title } as EventCourse)));
+    } catch (error) {
+      console.warn('Unable to load event modules:', error);
+    }
+  };
 
   const parseDateValue = (value: any) => {
     if (!value) return null;
@@ -180,6 +202,7 @@ export default function Announcements({ role }: AnnouncementsProps) {
         bookingOpen: newAnnouncement.type === 'event' && newAnnouncement.bookingOpen ? new Date(newAnnouncement.bookingOpen) : null,
         bookingClose: newAnnouncement.type === 'event' && newAnnouncement.bookingClose ? new Date(newAnnouncement.bookingClose) : null,
         eventPassword: null, // Initialize as null, admin can set later
+        eventCourseId: newAnnouncement.type === 'event' ? (newAnnouncement.eventCourseId || null) : null,
         expiresAt: newAnnouncement.expiresAt ? new Date(newAnnouncement.expiresAt) : null,
         authorId: auth.currentUser.uid,
         authorName: auth.currentUser.displayName || 'Administrator',
@@ -204,7 +227,7 @@ export default function Announcements({ role }: AnnouncementsProps) {
       await Promise.all(notificationPromises);
       await fetchAnnouncements();
       setShowAddModal(false);
-      setNewAnnouncement({ title: '', content: '', imageUrl: '', expiresAt: '', type: 'announcement', venue: '', eventDate: '', maxAttendees: '', bookingOpen: '', bookingClose: '' });
+      setNewAnnouncement({ title: '', content: '', imageUrl: '', expiresAt: '', type: 'announcement', venue: '', eventDate: '', maxAttendees: '', bookingOpen: '', bookingClose: '', eventCourseId: '' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'announcements');
     } finally {
@@ -252,6 +275,16 @@ export default function Announcements({ role }: AnnouncementsProps) {
         ...prev,
         [eventAnn.id]: [...(prev[eventAnn.id] || []), { id: registrationRef.id, ...registrationData, registeredAt: new Date() }]
       }));
+
+      if (eventAnn.eventCourseId) {
+        await setDoc(doc(db, 'enrollments', `${auth.currentUser.uid}_${eventAnn.eventCourseId}`), {
+          userId: auth.currentUser.uid,
+          courseId: eventAnn.eventCourseId,
+          status: 'approved',
+          joinedAt: serverTimestamp()
+        });
+      }
+
       alert('Registration successful. The administrator will send your access password manually.');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `announcements/${eventAnn.id}/registrations`);
@@ -445,6 +478,14 @@ export default function Announcements({ role }: AnnouncementsProps) {
                             </p>
                             <p className="text-xs text-emerald-600 mt-2 italic">Use this password to access the event</p>
                           </div>
+                        )}
+                        {getStudentRegistration(ann.id) && ann.eventCourseId && (
+                          <Link
+                            to={`/courses/${ann.eventCourseId}`}
+                            className="block text-center w-full bg-purple-600 text-white py-3 rounded-2xl font-bold hover:bg-purple-700 transition-all"
+                          >
+                            Open Event Module
+                          </Link>
                         )}
                       </div>
                     )}
@@ -641,6 +682,23 @@ export default function Announcements({ role }: AnnouncementsProps) {
                               required={newAnnouncement.type === 'event'}
                             />
                           </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-2">Link Event Module</label>
+                          <select
+                            value={newAnnouncement.eventCourseId}
+                            onChange={e => setNewAnnouncement(p => ({ ...p, eventCourseId: e.target.value }))}
+                            className="w-full bg-white border border-slate-200 p-4 rounded-2xl outline-none focus:ring-4 focus:ring-purple-100 focus:border-purple-200 transition-all"
+                          >
+                            <option value="">Select linked event module</option>
+                            {eventCourses.map(course => (
+                              <option key={course.id} value={course.id}>{course.title}</option>
+                            ))}
+                          </select>
+                          {eventCourses.length === 0 && (
+                            <p className="text-[10px] text-slate-500 italic">No event modules found yet. Create one from the admin dashboard first.</p>
+                          )}
                         </div>
 
                         <p className="text-[10px] text-slate-500 italic">Registered students appear below and the admin may send passwords manually after registration.</p>

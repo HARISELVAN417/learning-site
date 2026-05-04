@@ -11,6 +11,8 @@ interface Course {
   title: string;
   description: string;
   instructorId: string;
+  moduleType?: 'course' | 'event';
+  linkedAnnouncementId?: string | null;
 }
 
 interface Lesson {
@@ -153,6 +155,26 @@ export default function CourseDetails({ role }: { role: 'admin' | 'student' | nu
 
   if (loading) return <div>Loading course...</div>;
   if (!course) return <div>Course not found.</div>;
+
+  if (!isEnrolled && role === 'student' && course.moduleType === 'event') {
+    return (
+      <div className="max-w-3xl mx-auto py-20 px-6 text-center space-y-8">
+        <div className="bg-white border border-slate-200 rounded-[2rem] p-12 shadow-lg">
+          <div className="text-slate-900 text-3xl font-black uppercase tracking-tight mb-4">Event Module Access Restricted</div>
+          <p className="text-slate-600 text-sm leading-relaxed">This module is linked to an event announcement and is only available to students who register through the event registration flow.</p>
+          <p className="text-slate-500 text-sm">If you have already registered, please ensure your registration completed successfully and try again. Otherwise, visit the announcements page to register.</p>
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link to="/announcements" className="px-8 py-4 bg-purple-600 text-white rounded-2xl font-bold uppercase tracking-[0.2em] hover:bg-purple-700 transition-all">
+              Go to Announcements
+            </Link>
+            <button onClick={() => navigate(-1)} className="px-8 py-4 bg-slate-100 text-slate-900 rounded-2xl font-bold uppercase tracking-[0.2em] hover:bg-slate-200 transition-all">
+              Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 pb-32">
@@ -418,13 +440,19 @@ export default function CourseDetails({ role }: { role: 'admin' | 'student' | nu
           
           <div className="relative z-10">
             {!enrollmentStatus && role === 'student' && (
-              <button 
-                onClick={handleEnroll}
-                disabled={enrolling}
-                className="w-full bg-[#facc15] text-black py-6 rounded-2xl font-black uppercase tracking-[0.2em] text-lg shadow-xl hover:shadow-[#facc15]/20 hover:scale-[1.02] transition-all disabled:opacity-50 active:scale-95"
-              >
-                {enrolling ? 'PROVISIONING...' : 'ENROLL NOW'}
-              </button>
+              course?.moduleType === 'event' ? (
+                <div className="text-sm leading-relaxed bg-white/90 border border-[#e2e8f0] p-4 rounded-3xl text-[#334155]">
+                  This module is tied to a registered event announcement. Please register through the event page to gain access.
+                </div>
+              ) : (
+                <button 
+                  onClick={handleEnroll}
+                  disabled={enrolling}
+                  className="w-full bg-[#facc15] text-black py-6 rounded-2xl font-black uppercase tracking-[0.2em] text-lg shadow-xl hover:shadow-[#facc15]/20 hover:scale-[1.02] transition-all disabled:opacity-50 active:scale-95"
+                >
+                  {enrolling ? 'PROVISIONING...' : 'ENROLL NOW'}
+                </button>
+              )
             )}
 
             {enrollmentStatus === 'pending' && (
